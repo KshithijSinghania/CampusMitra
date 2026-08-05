@@ -37,6 +37,12 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+
+    # CampusMitra apps
+    'accounts',
+    'campus_map',
+    'reminders',
+    'assistant',
 ]
 
 MIDDLEWARE = [
