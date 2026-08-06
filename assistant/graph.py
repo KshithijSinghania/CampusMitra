@@ -190,3 +190,95 @@ def route_query(state: GraphState) -> GraphState:
 
     state["route"] = route
     return state
+
+RESPONSE_GRADER_PROMPT = """You are checking whether a chatbot's answer actually
+addresses the student's question. Respond with ONLY "useful" or "not_useful".
+
+An answer is "useful" if it directly addresses the question with real information,
+even if brief. An answer is "not_useful" if it's vague, says it doesn't know, or
+fails to address what was actually asked."""
+
+
+def grade_response(state: GraphState) -> GraphState:
+    co = cohere.ClientV2(api_key=settings.COHERE_API_KEY)
+    response = co.chat(
+        model="command-a-03-2025",
+        messages=[
+            {"role": "system", "content": RESPONSE_GRADER_PROMPT},
+            {"role": "user", "content": f"Question: {state['question']}\n\nAnswer: {state['generation']}"},
+        ],
+        temperature=0,
+    )
+    grade = response.message.content[0].text.strip().lower()
+    state["grade"] = "useful" if "useful" in grade and "not_useful" not in grade else "not_useful"
+    return state
+
+def escalate_human(state: GraphState) -> GraphState:
+    from .models import HumanEscalation
+    from django.contrib.auth.models import User
+
+    user = User.objects.filter(id=state["user_id"]).first() if state.get("user_id") else None
+
+    HumanEscalation.objects.create(
+        user=user,
+        question=state["question"],
+        last_generation=state.get("generation", ""),
+    )
+
+    state["generation"] = (
+        "I wasn't able to fully answer that after a couple of tries. "
+        "I've forwarded your question to campus support staff, who'll follow up with you directly."
+    )
+    return state
+
+from langgraph.graph import StateGraph, END
+
+
+def route_decision(state: GraphState) -> str:
+    """Tells LangGraph which node to go to after route_query, based on the classified route."""
+    return state["route"]
+
+
+def route_after_grade(state: GraphState) -> str:
+    if state["grade"] == "useful":
+        return "end"
+    state["follow_up_count"] = state.get("follow_up_count", 0) + 1
+    if state["follow_up_count"] >= 2:
+        return "escalate_human"
+    return "retry"
+
+
+def build_graph():
+    workflow = StateGraph(GraphState)
+
+    workflow.add_node("route_query", route_query)
+    workflow.add_node("retrieve", retrieve)
+    workflow.add_node("grade_documents", grade_documents)
+    workflow.add_node("generate", generate)
+    workflow.add_node("grade_response", grade_response)
+    workflow.add_node("escalate_human", escalate_human)
+
+    workflow.set_entry_point("route_query")
+
+    # after routing, every category still goes through retrieve() —
+    # for llm_fallback, retrieve() just produces an empty documents list, which is fine
+    workflow.add_edge("route_query", "retrieve")
+    workflow.add_edge("retrieve", "grade_documents")
+    workflow.add_edge("grade_documents", "generate")
+    workflow.add_edge("generate", "grade_response")
+
+    workflow.add_conditional_edges(
+        "grade_response",
+        route_after_grade,
+        {
+            "end": END,
+            "retry": "route_query",   # loops back to re-classify/re-retrieve with the same question
+            "escalate_human": "escalate_human",
+        },
+    )
+    workflow.add_edge("escalate_human", END)
+
+    return workflow.compile()
+
+
+graph = build_graph()

@@ -30,3 +30,13 @@ class Contact(models.Model):
 
     def __str__(self):
         return f"{self.name} ({self.department})"
+
+class HumanEscalation(models.Model):
+    user = models.ForeignKey("auth.User", on_delete=models.CASCADE, null=True, blank=True)
+    question = models.TextField()
+    last_generation = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    resolved = models.BooleanField(default=False)
+
+    def __str__(self):
+        return f"{self.question[:50]}... ({'resolved' if self.resolved else 'open'})"

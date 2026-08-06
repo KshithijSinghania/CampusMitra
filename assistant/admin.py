@@ -12,3 +12,11 @@ class MessTimingAdmin(admin.ModelAdmin):
 class ContactAdmin(admin.ModelAdmin):
     list_display = ["name", "department", "designation", "phone", "email"]
     search_fields = ["name", "department"]
+
+from .models import MessTiming, Contact, HumanEscalation
+
+
+@admin.register(HumanEscalation)
+class HumanEscalationAdmin(admin.ModelAdmin):
+    list_display = ["question", "user", "created_at", "resolved"]
+    list_filter = ["resolved"]
