@@ -1,5 +1,6 @@
 from django.urls import path
+from . import views
 
 urlpatterns = [
-    # routes will go here in later phases
+    path("", views.map_view, name="campus_map"),
 ]
