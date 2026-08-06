@@ -11,6 +11,7 @@ class StudentProfile(models.Model):
     gmail_linked = models.BooleanField(default=False)
     gmail_refresh_token = encrypt(models.TextField(blank=True, default=""))
     gmail_history_id = models.CharField(max_length=32, blank=True, default="")
+    gmail_watch_expiration = models.DateTimeField(null=True, blank=True)
 
     EMBEDDING_STATUS = [
         ("not_started", "Not started"),

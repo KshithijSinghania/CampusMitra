@@ -6,6 +6,23 @@ import chromadb
 import cohere
 import base64
 from django.conf import settings
+from django.utils.timezone import make_aware
+from datetime import datetime
+
+GMAIL_PUBSUB_TOPIC = "projects/campusmitra-504615/topics/gmail-push-notifications"
+
+
+def register_gmail_watch(profile):
+    service = get_gmail_service(profile)
+    response = service.users().watch(userId="me", body={
+        "labelIds": ["INBOX"],
+        "topicName": GMAIL_PUBSUB_TOPIC,
+    }).execute()
+
+    profile.gmail_history_id = str(response["historyId"])
+    expiration_ms = int(response["expiration"])
+    profile.gmail_watch_expiration = make_aware(datetime.fromtimestamp(expiration_ms / 1000))
+    profile.save()
 
 
 def get_gmail_service(profile):
@@ -34,6 +51,60 @@ def extract_plain_text(payload):
         elif mime_type == "text/html":
             text_content += BeautifulSoup(decoded, "html.parser").get_text()
     return text_content.strip()
+
+def incremental_sync_user_mailbox(user_id):
+    from accounts.models import StudentProfile
+    from googleapiclient.errors import HttpError
+
+    profile = StudentProfile.objects.get(user_id=user_id)
+    service = get_gmail_service(profile)
+    co = cohere.Client(settings.COHERE_API_KEY)
+    chroma_client = chromadb.PersistentClient(path="vectorstore")
+    collection = chroma_client.get_or_create_collection(name=f"gmail_{user_id}")
+    splitter = RecursiveCharacterTextSplitter(chunk_size=800, chunk_overlap=100)
+
+    try:
+        history_response = service.users().history().list(
+            userId="me",
+            startHistoryId=profile.gmail_history_id,
+            historyTypes=["messageAdded"],
+        ).execute()
+    except HttpError as e:
+        if e.resp.status == 410:
+            # historyId too old — Gmail's history window expired, need a fresh full backfill
+            backfill_user_mailbox(user_id)
+            return
+        raise
+
+    changes = history_response.get("history", [])
+    for change in changes:
+        for msg_added in change.get("messagesAdded", []):
+            msg_id = msg_added["message"]["id"]
+            msg = service.users().messages().get(userId="me", id=msg_id, format="full").execute()
+            headers = {h["name"]: h["value"] for h in msg["payload"].get("headers", [])}
+            text = extract_plain_text(msg["payload"])
+
+            if text:
+                chunks = splitter.split_text(text)
+                if chunks:
+                    embeddings = co.embed(texts=chunks, model="embed-english-v3.0", input_type="search_document").embeddings
+                    collection.upsert(
+                        ids=[f"{msg_id}_{idx}" for idx in range(len(chunks))],
+                        embeddings=embeddings,
+                        documents=chunks,
+                        metadatas=[{
+                            "user_id": user_id,
+                            "message_id": msg_id,
+                            "sender": headers.get("From", ""),
+                            "subject": headers.get("Subject", ""),
+                            "date": headers.get("Date", ""),
+                            "source": "gmail",
+                            "chunk_index": idx,
+                        } for idx in range(len(chunks))],
+                    )
+
+    profile.gmail_history_id = str(history_response.get("historyId", profile.gmail_history_id))
+    profile.save()
 
 
 def backfill_user_mailbox(user_id):
@@ -89,8 +160,10 @@ def backfill_user_mailbox(user_id):
         profile.gmail_history_id = str(profile_data.get("historyId", ""))
         profile.embedding_status = "ready"
         profile.save()
+        register_gmail_watch(profile)
 
     except Exception as e:
         profile.embedding_status = "error"
         profile.save()
         raise e
+

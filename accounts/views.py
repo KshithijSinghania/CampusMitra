@@ -5,6 +5,30 @@ from .forms import SignUpForm
 from django.conf import settings
 from google_auth_oauthlib.flow import Flow
 from .gmail_oauth import build_flow
+import json
+import base64
+from django.views.decorators.csrf import csrf_exempt
+from django.http import HttpResponse
+from .models import StudentProfile
+from assistant.tasks import incremental_sync_task
+
+@csrf_exempt
+def gmail_webhook_view(request):
+    if request.GET.get("token") != settings.PUBSUB_VERIFICATION_TOKEN:
+        return HttpResponse(status=403)
+
+    envelope = json.loads(request.body)
+    message_data = envelope["message"]["data"]
+    decoded = json.loads(base64.b64decode(message_data).decode("utf-8"))
+
+    email_address = decoded.get("emailAddress")
+    try:
+        profile = StudentProfile.objects.select_related("user").get(user__email=email_address)
+    except StudentProfile.DoesNotExist:
+        return HttpResponse(status=200)  # unknown user, acknowledge anyway so Pub/Sub doesn't retry forever
+
+    incremental_sync_task.delay(profile.user.id)
+    return HttpResponse(status=200)
 
 def signup_view(request):
     if request.method == "POST":

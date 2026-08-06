@@ -37,7 +37,9 @@ COHERE_API_KEY = env("COHERE_API_KEY")
 TAVILY_API_KEY = env("TAVILY_API_KEY", default="")
 TRANSLATE_API_KEY = env("TRANSLATE_API_KEY", default="")
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = ["127.0.0.1", "localhost", ".ngrok-free.dev", ".ngrok-free.app"]
+
+PUBSUB_VERIFICATION_TOKEN = env("PUBSUB_VERIFICATION_TOKEN")
 
 LOGIN_REDIRECT_URL = "/accounts/dashboard/"
 LOGOUT_REDIRECT_URL = "/accounts/login/"
@@ -48,6 +50,14 @@ LOGIN_URL = "/accounts/login/"
 CELERY_BROKER_URL = env("CELERY_BROKER_URL", default="redis://localhost:6379/0")
 CELERY_RESULT_BACKEND = env("CELERY_BROKER_URL", default="redis://localhost:6379/0")
 CELERY_TASK_TRACK_STARTED = True
+from celery.schedules import crontab
+
+CELERY_BEAT_SCHEDULE = {
+    "renew-gmail-watches-daily": {
+        "task": "assistant.tasks.renew_expiring_watches",
+        "schedule": crontab(hour=3, minute=0),  # runs once daily at 3 AM
+    },
+}
 
 INSTALLED_APPS = [
     'django.contrib.admin',
