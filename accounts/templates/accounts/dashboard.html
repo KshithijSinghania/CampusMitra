@@ -1,3 +1,5 @@
 <h2>Welcome, {{ user.username }}</h2>
 <p>Roll number: {{ user.studentprofile.roll_number }}</p>
+<a href="{% url 'reminder_list' %}">My Reminders</a>
+<br>
 <a href="{% url 'logout' %}">Log out</a>

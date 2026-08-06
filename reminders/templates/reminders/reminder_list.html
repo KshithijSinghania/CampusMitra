@@ -1,0 +1,46 @@
+<h2>My Reminders</h2>
+
+<form method="post">
+    {% csrf_token %}
+    {{ form.as_p }}
+    <button type="submit">Add Reminder</button>
+</form>
+
+<ul id="reminder-list">
+    {% for reminder in reminders %}
+        <li data-remind-at="{{ reminder.remind_at.isoformat }}" data-text="{{ reminder.text }}">
+            {{ reminder.text }} — {{ reminder.remind_at }}
+            <a href="{% url 'reminder_delete' reminder.pk %}">Delete</a>
+        </li>
+    {% empty %}
+        <li>No reminders yet.</li>
+    {% endfor %}
+</ul>
+
+<script>
+// Ask permission once, on page load
+if (Notification.permission !== "granted" && Notification.permission !== "denied") {
+    Notification.requestPermission();
+}
+
+// Check every 30 seconds whether any reminder's time has arrived
+function checkReminders() {
+    if (Notification.permission !== "granted") return;
+
+    const items = document.querySelectorAll("#reminder-list li[data-remind-at]");
+    const now = new Date();
+
+    items.forEach(item => {
+        const remindAt = new Date(item.dataset.remindAt);
+        const alreadyFired = item.dataset.fired === "true";
+
+        if (!alreadyFired && remindAt <= now) {
+            new Notification("CampusMitra Reminder", { body: item.dataset.text });
+            item.dataset.fired = "true";  // prevents re-firing every 30s once triggered
+        }
+    });
+}
+
+setInterval(checkReminders, 30000);
+checkReminders();  // also check immediately on page load
+</script>
