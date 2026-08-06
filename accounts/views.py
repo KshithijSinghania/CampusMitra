@@ -50,35 +50,45 @@ def dashboard_view(request):
 @login_required
 def gmail_connect_view(request):
     flow = build_flow()
-
     authorization_url, state = flow.authorization_url(
         access_type="offline",
         include_granted_scopes="true",
         prompt="consent",
     )
-
     request.session["gmail_oauth_state"] = state
-    request.session["gmail_code_verifier"] = flow.code_verifier
-
+    request.session["gmail_code_verifier"] = flow.code_verifier  # new line
     return redirect(authorization_url)
 
 
+from assistant.tasks import backfill_user_mailbox_task
+
 @login_required
 def gmail_callback_view(request):
-    state = request.session["gmail_oauth_state"]
+    state = request.session.get("gmail_oauth_state")
+    code_verifier = request.session.get("gmail_code_verifier")  # new line
 
-    flow = build_flow(state=state)
-    flow.code_verifier = request.session["gmail_code_verifier"]
+    flow = build_flow()
+    flow.code_verifier = code_verifier  # new line — restores it onto the fresh Flow object
 
-    flow.fetch_token(
-        authorization_response=request.build_absolute_uri()
-    )
+    flow.fetch_token(authorization_response=request.build_absolute_uri())
 
     credentials = flow.credentials
-
     profile = request.user.studentprofile
     profile.gmail_refresh_token = credentials.refresh_token
     profile.gmail_linked = True
     profile.save()
 
+    backfill_user_mailbox_task.delay(request.user.id)
+
     return redirect("dashboard")
+
+from django.http import JsonResponse
+
+@login_required
+def embedding_status_view(request):
+    profile = request.user.studentprofile
+    return JsonResponse({
+        "status": profile.embedding_status,
+        "processed": profile.embedding_processed_messages,
+        "total": profile.embedding_total_messages,
+    })

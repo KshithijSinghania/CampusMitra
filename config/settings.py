@@ -33,6 +33,10 @@ GOOGLE_OAUTH_CLIENT_ID = env("GOOGLE_OAUTH_CLIENT_ID")
 GOOGLE_OAUTH_CLIENT_SECRET = env("GOOGLE_OAUTH_CLIENT_SECRET")
 GOOGLE_OAUTH_REDIRECT_URI = env("GOOGLE_OAUTH_REDIRECT_URI")
 
+COHERE_API_KEY = env("COHERE_API_KEY")
+TAVILY_API_KEY = env("TAVILY_API_KEY", default="")
+TRANSLATE_API_KEY = env("TRANSLATE_API_KEY", default="")
+
 ALLOWED_HOSTS = []
 
 LOGIN_REDIRECT_URL = "/accounts/dashboard/"
@@ -40,6 +44,10 @@ LOGOUT_REDIRECT_URL = "/accounts/login/"
 LOGIN_URL = "/accounts/login/"
 
 # Application definition
+
+CELERY_BROKER_URL = env("CELERY_BROKER_URL", default="redis://localhost:6379/0")
+CELERY_RESULT_BACKEND = env("CELERY_BROKER_URL", default="redis://localhost:6379/0")
+CELERY_TASK_TRACK_STARTED = True
 
 INSTALLED_APPS = [
     'django.contrib.admin',

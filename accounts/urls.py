@@ -8,4 +8,5 @@ urlpatterns = [
     path("dashboard/", views.dashboard_view, name="dashboard"),
     path("gmail/connect/", views.gmail_connect_view, name="gmail_connect"),
     path("gmail/callback/", views.gmail_callback_view, name="gmail_callback"),
+    path("api/embedding-status/", views.embedding_status_view, name="embedding_status"),
 ]
