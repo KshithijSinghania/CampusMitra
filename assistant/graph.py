@@ -4,15 +4,37 @@ import cohere
 import chromadb
 from .ingestion import embed_query
 from assistant.models import MessTiming, Contact
+from .language import detect_language, translate
 
 class GraphState(TypedDict):
     question: str
+    original_question: Optional[str]
+    detected_language: Optional[str]
     user_id: Optional[int]
     route: Optional[str]
     documents: Optional[list]
     generation: Optional[str]
     grade: Optional[str]
     follow_up_count: int
+
+def detect_and_translate_query(state: GraphState) -> GraphState:
+    original = state["question"]
+    lang = detect_language(original)
+
+    state["original_question"] = original
+    state["detected_language"] = lang
+
+    if lang != "en":
+        state["question"] = translate(original, "en")
+
+    return state
+
+
+def translate_response(state: GraphState) -> GraphState:
+    lang = state.get("detected_language", "en")
+    if lang != "en":
+        state["generation"] = translate(state["generation"], lang)
+    return state
 
 ROUTER_SYSTEM_PROMPT = """You are a query router for a college campus assistant chatbot.
 Classify the student's question into EXACTLY ONE of these four categories.
@@ -119,25 +141,33 @@ def grade_documents(state: GraphState) -> GraphState:
     documents = state["documents"]
 
     if not documents:
-        return state  # nothing to grade
+        return state
 
     co = cohere.ClientV2(api_key=settings.COHERE_API_KEY)
-    relevant_docs = []
 
-    for doc in documents:
-        response = co.chat(
-            model="command-a-03-2025",
-            messages=[
-                {"role": "system", "content": GRADER_SYSTEM_PROMPT},
-                {"role": "user", "content": f"Question: {question}\n\nDocument: {doc}"},
-            ],
-            temperature=0,
-        )
-        grade = response.message.content[0].text.strip().lower()
-        if "yes" in grade:
-            relevant_docs.append(doc)
+    numbered_docs = "\n\n".join(f"[{i}] {doc}" for i, doc in enumerate(documents))
+    response = co.chat(
+        model="command-a-03-2025",
+        messages=[
+            {"role": "system", "content": (
+                "You are grading which retrieved documents are relevant to a student's "
+                "question. Respond with ONLY a comma-separated list of the relevant "
+                "document numbers, e.g. '0,2'. If none are relevant, respond with 'none'."
+            )},
+            {"role": "user", "content": f"Question: {question}\n\nDocuments:\n{numbered_docs}"},
+        ],
+        temperature=0,
+    )
 
-    state["documents"] = relevant_docs
+    answer = response.message.content[0].text.strip().lower()
+    if answer == "none":
+        state["documents"] = []
+    else:
+        try:
+            relevant_indices = [int(i.strip()) for i in answer.split(",") if i.strip().isdigit()]
+            state["documents"] = [documents[i] for i in relevant_indices if i < len(documents)]
+        except (ValueError, IndexError):
+            state["documents"] = documents  # if parsing fails, fail open rather than losing all documents
     return state
 
 GENERATE_SYSTEM_PROMPT = """You are CampusMitra, a helpful campus assistant chatbot for
@@ -251,17 +281,18 @@ def route_after_grade(state: GraphState) -> str:
 def build_graph():
     workflow = StateGraph(GraphState)
 
+    workflow.add_node("detect_and_translate_query", detect_and_translate_query)
     workflow.add_node("route_query", route_query)
     workflow.add_node("retrieve", retrieve)
     workflow.add_node("grade_documents", grade_documents)
     workflow.add_node("generate", generate)
     workflow.add_node("grade_response", grade_response)
     workflow.add_node("escalate_human", escalate_human)
+    workflow.add_node("translate_response", translate_response)
 
-    workflow.set_entry_point("route_query")
+    workflow.set_entry_point("detect_and_translate_query")
 
-    # after routing, every category still goes through retrieve() —
-    # for llm_fallback, retrieve() just produces an empty documents list, which is fine
+    workflow.add_edge("detect_and_translate_query", "route_query")
     workflow.add_edge("route_query", "retrieve")
     workflow.add_edge("retrieve", "grade_documents")
     workflow.add_edge("grade_documents", "generate")
@@ -271,12 +302,13 @@ def build_graph():
         "grade_response",
         route_after_grade,
         {
-            "end": END,
-            "retry": "route_query",   # loops back to re-classify/re-retrieve with the same question
+            "end": "translate_response",
+            "retry": "route_query",   # note: retries skip re-detecting language — we already have it, no need to redo
             "escalate_human": "escalate_human",
         },
     )
-    workflow.add_edge("escalate_human", END)
+    workflow.add_edge("escalate_human", "translate_response")
+    workflow.add_edge("translate_response", END)
 
     return workflow.compile()
 
