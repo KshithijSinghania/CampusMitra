@@ -42,9 +42,9 @@ def summarize_session(user_id, session_id):
 
     transcript = "\n\n".join(f"Q: {log.question}\nA: {log.answer}" for log in logs)
 
-    co = cohere.ClientV2(api_key=settings.COHERE_API_KEY)
-    response = co.chat(
-        model="command-a-03-2025",
+    from .cohere_utils import chat_with_retry
+
+    response = chat_with_retry(
         messages=[
             {"role": "system", "content": (
                 "Summarize this conversation between a student and a campus assistant "

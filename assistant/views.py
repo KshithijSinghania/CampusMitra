@@ -44,7 +44,18 @@ async def chat_api_view(request):
     # LangGraph's compiled graph runs synchronously (all our nodes are sync functions,
     # including Django ORM calls) — sync_to_async bridges it into Django's async view
     # without blocking the event loop
-    result = await sync_to_async(graph.invoke)(state)
+    try:
+        result = await sync_to_async(graph.invoke)(state)
+    except Exception as e:
+        if "429" in str(e) or "TooManyRequestsError" in type(e).__name__:
+            return JsonResponse({
+                "answer": "I'm getting a lot of requests right now — please wait about a minute and try again.",
+                "route": "error",
+            })
+        return JsonResponse({
+            "answer": "Something went wrong on my end. Please try again in a moment.",
+            "route": "error",
+        })
 
     return JsonResponse({
         "answer": result["generation"],

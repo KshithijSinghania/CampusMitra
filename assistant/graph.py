@@ -5,6 +5,7 @@ import chromadb
 from .ingestion import embed_query
 from assistant.models import MessTiming, Contact
 from .language import detect_language, translate
+from .cohere_utils import chat_with_retry
 
 class GraphState(TypedDict):
     question: str
@@ -176,11 +177,8 @@ def grade_documents(state: GraphState) -> GraphState:
     if not documents:
         return state
 
-    co = cohere.ClientV2(api_key=settings.COHERE_API_KEY)
-
     numbered_docs = "\n\n".join(f"[{i}] {doc}" for i, doc in enumerate(documents))
-    response = co.chat(
-        model="command-a-03-2025",
+    response = chat_with_retry(
         messages=[
             {"role": "system", "content": (
                 "You are grading which retrieved documents are relevant to a student's "
@@ -223,9 +221,7 @@ def generate(state: GraphState) -> GraphState:
 
     user_content = "\n\n".join(parts)
 
-    co = cohere.ClientV2(api_key=settings.COHERE_API_KEY)
-    response = co.chat(
-        model="command-a-03-2025",
+    response = chat_with_retry(
         messages=[
             {"role": "system", "content": GENERATE_SYSTEM_PROMPT},
             {"role": "user", "content": user_content},
@@ -237,10 +233,7 @@ def generate(state: GraphState) -> GraphState:
     return state
 
 def route_query(state: GraphState) -> GraphState:
-    co = cohere.ClientV2(api_key=settings.COHERE_API_KEY)
-
-    response = co.chat(
-        model="command-a-03-2025",
+    response = chat_with_retry(
         messages=[
             {"role": "system", "content": ROUTER_SYSTEM_PROMPT},
             {"role": "user", "content": state["question"]},
@@ -266,9 +259,7 @@ fails to address what was actually asked."""
 
 
 def grade_response(state: GraphState) -> GraphState:
-    co = cohere.ClientV2(api_key=settings.COHERE_API_KEY)
-    response = co.chat(
-        model="command-a-03-2025",
+    response = chat_with_retry(
         messages=[
             {"role": "system", "content": RESPONSE_GRADER_PROMPT},
             {"role": "user", "content": f"Question: {state['question']}\n\nAnswer: {state['generation']}"},
