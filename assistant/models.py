@@ -1,5 +1,30 @@
 from django.db import models
 
+class ConversationLog(models.Model):
+    user = models.ForeignKey("auth.User", on_delete=models.CASCADE, related_name="conversation_logs")
+    session_id = models.CharField(max_length=40)
+    question = models.TextField()
+    answer = models.TextField()
+    timestamp = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["timestamp"]
+
+    def __str__(self):
+        return f"{self.user.username}: {self.question[:50]}"
+
+
+class SessionSummary(models.Model):
+    user = models.ForeignKey("auth.User", on_delete=models.CASCADE, related_name="session_summaries")
+    summary_text = models.TextField()
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]  # most recent summaries first
+
+    def __str__(self):
+        return f"{self.user.username} — {self.created_at.strftime('%Y-%m-%d')}"
+
 
 class MessTiming(models.Model):
     MEAL_CHOICES = [

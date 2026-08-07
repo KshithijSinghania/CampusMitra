@@ -1,5 +1,9 @@
 from django.contrib import admin
 from .models import MessTiming, Contact
+from .models import MessTiming, Contact, HumanEscalation, ConversationLog, SessionSummary
+
+admin.site.register(ConversationLog)
+admin.site.register(SessionSummary)
 
 
 @admin.register(MessTiming)

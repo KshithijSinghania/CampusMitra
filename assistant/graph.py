@@ -11,11 +11,32 @@ class GraphState(TypedDict):
     original_question: Optional[str]
     detected_language: Optional[str]
     user_id: Optional[int]
+    session_id: Optional[str]
     route: Optional[str]
     documents: Optional[list]
     generation: Optional[str]
     grade: Optional[str]
     follow_up_count: int
+    short_term_context: Optional[str]
+
+def load_short_term_context(state: GraphState) -> GraphState:
+    from .models import ConversationLog
+
+    if not state.get("user_id") or not state.get("session_id"):
+        return state
+
+    recent_logs = ConversationLog.objects.filter(
+        user_id=state["user_id"],
+        session_id=state["session_id"],
+    ).order_by("-timestamp")[:5]  # last 5 turns is enough context without bloating the prompt
+
+    if recent_logs:
+        context_lines = [f"Q: {log.question}\nA: {log.answer}" for log in reversed(recent_logs)]
+        state["short_term_context"] = "\n\n".join(context_lines)
+    else:
+        state["short_term_context"] = ""
+
+    return state
 
 def detect_and_translate_query(state: GraphState) -> GraphState:
     original = state["question"]
@@ -34,6 +55,18 @@ def translate_response(state: GraphState) -> GraphState:
     lang = state.get("detected_language", "en")
     if lang != "en":
         state["generation"] = translate(state["generation"], lang)
+    return state
+
+def log_conversation(state: GraphState) -> GraphState:
+    from .models import ConversationLog
+
+    if state.get("user_id") and state.get("session_id"):
+        ConversationLog.objects.create(
+            user_id=state["user_id"],
+            session_id=state["session_id"],
+            question=state.get("original_question") or state["question"],
+            answer=state["generation"],
+        )
     return state
 
 ROUTER_SYSTEM_PROMPT = """You are a query router for a college campus assistant chatbot.
@@ -179,13 +212,16 @@ say so honestly rather than guessing. Keep answers concise and friendly."""
 def generate(state: GraphState) -> GraphState:
     question = state["question"]
     documents = state["documents"]
+    short_term_context = state.get("short_term_context", "")
 
+    parts = []
+    if short_term_context:
+        parts.append(f"Recent conversation:\n{short_term_context}")
     if documents:
-        context = "\n\n".join(documents)
-        user_content = f"Context:\n{context}\n\nQuestion: {question}"
-    else:
-        # llm_fallback route, or nothing survived grading — answer from general knowledge
-        user_content = question
+        parts.append(f"Context:\n{chr(10).join(documents)}")
+    parts.append(f"Question: {question}")
+
+    user_content = "\n\n".join(parts)
 
     co = cohere.ClientV2(api_key=settings.COHERE_API_KEY)
     response = co.chat(
@@ -194,7 +230,7 @@ def generate(state: GraphState) -> GraphState:
             {"role": "system", "content": GENERATE_SYSTEM_PROMPT},
             {"role": "user", "content": user_content},
         ],
-        temperature=0.3,  # a little creative flexibility for natural-sounding answers, unlike the routing/grading calls
+        temperature=0.3,
     )
 
     state["generation"] = response.message.content[0].text.strip()
@@ -282,6 +318,7 @@ def build_graph():
     workflow = StateGraph(GraphState)
 
     workflow.add_node("detect_and_translate_query", detect_and_translate_query)
+    workflow.add_node("load_short_term_context", load_short_term_context)
     workflow.add_node("route_query", route_query)
     workflow.add_node("retrieve", retrieve)
     workflow.add_node("grade_documents", grade_documents)
@@ -289,10 +326,12 @@ def build_graph():
     workflow.add_node("grade_response", grade_response)
     workflow.add_node("escalate_human", escalate_human)
     workflow.add_node("translate_response", translate_response)
+    workflow.add_node("log_conversation", log_conversation)
 
     workflow.set_entry_point("detect_and_translate_query")
 
-    workflow.add_edge("detect_and_translate_query", "route_query")
+    workflow.add_edge("detect_and_translate_query", "load_short_term_context")
+    workflow.add_edge("load_short_term_context", "route_query")
     workflow.add_edge("route_query", "retrieve")
     workflow.add_edge("retrieve", "grade_documents")
     workflow.add_edge("grade_documents", "generate")
@@ -303,12 +342,13 @@ def build_graph():
         route_after_grade,
         {
             "end": "translate_response",
-            "retry": "route_query",   # note: retries skip re-detecting language — we already have it, no need to redo
+            "retry": "route_query",
             "escalate_human": "escalate_human",
         },
     )
     workflow.add_edge("escalate_human", "translate_response")
-    workflow.add_edge("translate_response", END)
+    workflow.add_edge("translate_response", "log_conversation")
+    workflow.add_edge("log_conversation", END)
 
     return workflow.compile()
 
