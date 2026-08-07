@@ -1,0 +1,59 @@
+<h2>CampusMitra Chat</h2>
+
+<div id="chat-log" style="border:1px solid #ccc; padding:10px; height:400px; overflow-y:auto; margin-bottom:10px;"></div>
+
+<form id="chat-form">
+    <input type="text" id="message-input" placeholder="Ask something..." style="width:70%;" autocomplete="off">
+    <button type="submit">Send</button>
+</form>
+
+<script>
+function getCookie(name) {
+    const match = document.cookie.match(new RegExp('(^| )' + name + '=([^;]+)'));
+    return match ? match[2] : null;
+}
+
+const chatLog = document.getElementById("chat-log");
+const form = document.getElementById("chat-form");
+const input = document.getElementById("message-input");
+
+function appendMessage(sender, text) {
+    const div = document.createElement("div");
+    div.innerHTML = `<strong>${sender}:</strong> ${text}`;
+    chatLog.appendChild(div);
+    chatLog.scrollTop = chatLog.scrollHeight;
+}
+
+form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const message = input.value.trim();
+    if (!message) return;
+
+    appendMessage("You", message);
+    input.value = "";
+    appendMessage("CampusMitra", "<em>thinking...</em>");
+
+    try {
+        const response = await fetch("{% url 'chat_api' %}", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                "X-CSRFToken": getCookie("csrftoken"),
+            },
+            body: JSON.stringify({ message: message }),
+        });
+        const data = await response.json();
+
+        chatLog.lastChild.remove();  // removes the "thinking..." placeholder
+
+        if (data.error) {
+            appendMessage("CampusMitra", `Error: ${data.error}`);
+        } else {
+            appendMessage("CampusMitra", data.answer);
+        }
+    } catch (err) {
+        chatLog.lastChild.remove();
+        appendMessage("CampusMitra", "Something went wrong. Please try again.");
+    }
+});
+</script>
