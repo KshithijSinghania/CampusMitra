@@ -177,6 +177,11 @@ def grade_documents(state: GraphState) -> GraphState:
     if not documents:
         return state
 
+    # structured_db results are exact database facts — no hallucination risk,
+    # skip the LLM grading call entirely and trust them as-is
+    if state["route"] == "structured_db":
+        return state
+
     numbered_docs = "\n\n".join(f"[{i}] {doc}" for i, doc in enumerate(documents))
     response = chat_with_retry(
         messages=[
@@ -198,7 +203,7 @@ def grade_documents(state: GraphState) -> GraphState:
             relevant_indices = [int(i.strip()) for i in answer.split(",") if i.strip().isdigit()]
             state["documents"] = [documents[i] for i in relevant_indices if i < len(documents)]
         except (ValueError, IndexError):
-            state["documents"] = documents  # if parsing fails, fail open rather than losing all documents
+            state["documents"] = documents
     return state
 
 GENERATE_SYSTEM_PROMPT = """You are CampusMitra, a helpful campus assistant chatbot for
