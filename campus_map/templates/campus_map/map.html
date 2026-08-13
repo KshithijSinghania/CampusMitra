@@ -1,23 +1,25 @@
-<h2>Campus Navigation</h2>
-
-<form method="post">
-    {% csrf_token %}
-    <label>From: <input type="text" name="start" placeholder="e.g. Hostel H10"></label>
-    <label>To: <input type="text" name="end" placeholder="e.g. Library"></label>
-    <button type="submit">Show Route</button>
-</form>
-
-{% if error %}
-    <p style="color:red;">{{ error }}</p>
-{% endif %}
-
+{% extends "base.html" %}
+{% block title %}Campus Map — CampusMitra{% endblock %}
+{% block content %}
+<div class="card">
+    <h2>Campus Navigation</h2>
+    <form method="post">
+        {% csrf_token %}
+        <label>From</label>
+        <input type="text" name="start" placeholder="e.g. Hostel H10">
+        <label>To</label>
+        <input type="text" name="end" placeholder="e.g. Library">
+        <button type="submit">Show Route</button>
+    </form>
+    {% if error %}<p class="error">{{ error }}</p>{% endif %}
+</div>
 {% if fmap_html %}
-    <div>{{ fmap_html|safe }}</div>
+<div class="card" style="margin-top:16px;">{{ fmap_html|safe }}</div>
 {% endif %}
-
-<h3>All Known Locations</h3>
-<ul>
-    {% for loc in locations %}
-        <li>{{ loc.name }} ({{ loc.get_category_display }})</li>
-    {% endfor %}
-</ul>
+<div class="card" style="margin-top:16px;">
+    <h2 style="font-size:1.1rem;">All Known Locations</h2>
+    <ul class="list">
+        {% for loc in locations %}<li><span>{{ loc.name }}</span><span style="color:var(--text-muted);">{{ loc.get_category_display }}</span></li>{% endfor %}
+    </ul>
+</div>
+{% endblock %}

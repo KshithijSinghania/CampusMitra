@@ -1,7 +1,11 @@
-<h2>Welcome, {{ user.username }}</h2>
-<p>Roll number: {{ user.studentprofile.roll_number }}</p>
-<a href="{% url 'reminder_list' %}">My Reminders</a> |
-<a href="{% url 'campus_map' %}">Campus Map</a> |
-<a href="{% url 'chat' %}">Chat with CampusMitra</a>
-<br>
-<a href="{% url 'logout' %}">Log out</a>
+{% extends "base.html" %}
+{% block title %}Dashboard — CampusMitra{% endblock %}
+{% block content %}
+<div class="card">
+    <h2>Welcome, {{ user.username }} 👋</h2>
+    <p class="subtitle">Roll number: {{ user.studentprofile.roll_number }}</p>
+    <a href="{% url 'chat' %}" class="btn">Chat with CampusMitra</a>
+    <a href="{% url 'reminder_list' %}" class="btn btn-secondary">My Reminders</a>
+    <a href="{% url 'campus_map' %}" class="btn btn-secondary">Campus Map</a>
+</div>
+{% endblock %}

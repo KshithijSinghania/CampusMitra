@@ -37,7 +37,7 @@ COHERE_API_KEY = env("COHERE_API_KEY")
 TAVILY_API_KEY = env("TAVILY_API_KEY", default="")
 TRANSLATE_API_KEY = env("TRANSLATE_API_KEY", default="")
 
-ALLOWED_HOSTS = ["127.0.0.1", "localhost", ".ngrok-free.dev", ".ngrok-free.app"]
+ALLOWED_HOSTS = env.list('ALLOWED_HOSTS', default=["127.0.0.1", "localhost", ".ngrok-free.dev", ".ngrok-free.app"])
 
 PUBSUB_VERIFICATION_TOKEN = env("PUBSUB_VERIFICATION_TOKEN")
 
