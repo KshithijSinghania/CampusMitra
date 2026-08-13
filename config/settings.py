@@ -101,8 +101,16 @@ TEMPLATES = [
     },
 ]
 
-WSGI_APPLICATION = 'config.wsgi.application'
+if not DEBUG:
+    SECURE_SSL_REDIRECT = True
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+    SECURE_HSTS_SECONDS = 31536000
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = True
+    SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')  # new line — tells Django to trust Railway's forwarded-proto header
 
+WSGI_APPLICATION = 'config.wsgi.application'
+CSRF_TRUSTED_ORIGINS = ['https://campusmitra-production.up.railway.app']
 
 # Database
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
